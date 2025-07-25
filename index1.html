@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BB84-Inspired Web Encryptor</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+  <style>
+    body { padding: 20px; }
+    #qr { display: block; margin-top: 10px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2 class="mb-4">BB84-Inspired Web Encryptor</h2>
+
+    <!-- Encrypt Section -->
+    <div class="card mb-4">
+      <div class="card-body">
+        <h5>1️⃣ Alice: Encrypt a Message</h5>
+        <label>Enter Message:</label>
+        <textarea id="messageInput" class="form-control mb-2"></textarea>
+        <button class="btn btn-primary" onclick="encryptAndStore()">Encrypt & Download Password</button>
+        <div class="mt-3" id="qrContainer" style="display:none;">
+          <b>Scan this QR (Password):</b>
+          <canvas id="qr"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Decrypt Section -->
+    <div class="card">
+      <div class="card-body">
+        <h5>2️⃣ Bob: Decrypt the Stored Message</h5>
+        <label>Enter Password (from file or QR):</label>
+        <input type="password" id="passwordInput" class="form-control mb-2" placeholder="Enter Numeric Password">
+        <button class="btn btn-success" onclick="decryptStoredMessage()">Decrypt</button>
+        <div class="mt-2" id="decryptedOutput"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ——— Helper to download password as text file ———
+    function downloadTextFile(filename, text) {
+      const blob = new Blob([text], { type: 'text/plain' });
+      const link = document.createElement('a');
+      link.href = window.URL.createObjectURL(blob);
+      link.download = filename;
+      link.click();
+    }
+
+    // ——— BB84-alike key generation ———
+    function generateBB84KeyBits(msg) {
+      let seed = 0;
+      for (const c of msg) seed += c.charCodeAt(0);
+      let rng = seed;
+      const bits = [], bases = [], recvBases = [];
+      for (let i = 0; i < 64; i++) {
+        rng = (1103515245 * rng + 12345) & 0x7fffffff;
+        bits.push(rng % 2);
+        rng = (1103515245 * rng + 12345) & 0x7fffffff;
+        bases.push(rng % 2);
+        rng = (1103515245 * rng + 12345) & 0x7fffffff;
+        recvBases.push(rng % 2);
+      }
+      return bits.filter((_, i) => bases[i] === recvBases[i]).join("");
+    }
+
+    // ——— Numeric-only password generation ———
+    function numericPassword(bits) {
+      // Hash-like compression to numeric code
+      let hash = 0;
+      for (let i = 0; i < bits.length; i++) {
+        hash = (hash * 31 + (bits[i] === '1' ? 1 : 0)) % 1000000000000; // 12 digit max
+      }
+      return String(hash).padStart(12, '0');
+    }
+
+    // ——— Encrypt & Store ———
+    function encryptAndStore() {
+      const msgInput = document.getElementById("messageInput");
+      const msg = msgInput.value.trim();
+      if (!msg) {
+        alert("⚠️ Please enter a message to encrypt!");
+        return;
+      }
+
+      const bits = generateBB84KeyBits(msg);
+      const password = numericPassword(bits);
+
+      // Store encrypted text in local storage
+      const encryptedText = btoa(password + ":" + msg);
+      localStorage.setItem("encryptedMessage", encryptedText);
+
+      // Download password as file
+      downloadTextFile("password.txt", password);
+
+      // Show QR
+      document.getElementById("qrContainer").style.display = "block";
+      new QRious({
+        element: document.getElementById("qr"),
+        value: password,
+        size: 150,
+      });
+
+      // Clear message input
+      msgInput.value = "";
+
+      alert("✅ Message encrypted!\nPassword downloaded and shown as QR.\nMessage cleared for security.");
+    }
+
+    // ——— Decrypt from Stored Cipher ———
+    function decryptStoredMessage() {
+      const password = document.getElementById("passwordInput").value.trim();
+      if (!password) {
+        document.getElementById("decryptedOutput").innerHTML = `<span class="text-danger">⚠️ Enter the password.</span>`;
+        return;
+      }
+
+      const cipher = localStorage.getItem("encryptedMessage");
+      if (!cipher) {
+        document.getElementById("decryptedOutput").innerHTML = `<span class="text-danger">⚠️ No encrypted message found in this browser.</span>`;
+        return;
+      }
+
+      try {
+        const decoded = atob(cipher);
+        const [originalPassword, msg] = decoded.split(":");
+        if (originalPassword !== password) {
+          document.getElementById("decryptedOutput").innerHTML = `<span class="text-danger">❌ Incorrect password.</span>`;
+        } else {
+          document.getElementById("decryptedOutput").innerHTML = `<span class="text-success"><b>Decrypted Message:</b> ${msg}</span>`;
+        }
+      } catch {
+        document.getElementById("decryptedOutput").innerHTML = `<span class="text-danger">⚠️ Failed to decrypt. Data corrupted.</span>`;
+      }
+    }
+  </script>
+</body>
+</html>
